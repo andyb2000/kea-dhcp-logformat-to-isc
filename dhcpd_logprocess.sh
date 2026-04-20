@@ -4,13 +4,17 @@
 ##  https://github.com/andyb2000/kea-dhcp-logformat-to-isc
 ##########################################################################
 
+
 declare -A hostnames
 declare -A last_request_ip
 
-while read -r line; do
+# Normalize carriage returns and ensure each log entry is on a single line
+tr '\r' '\n' | while read -r line; do
+
 
     # ---- Extract timestamp ----
     ts=$(echo "$line" | awk '{print $1, $2}')
+
 
     # ---- Capture hostname (option 12) ----
     if [[ "$line" == *"option[12]"* ]]; then
@@ -22,6 +26,7 @@ while read -r line; do
         fi
     fi
 
+
     # ---- Capture FQDN (option 81) ----
     if [[ "$line" == *"option[81]"* ]]; then
         mac=$(echo "$line" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
@@ -31,6 +36,7 @@ while read -r line; do
             hostnames["$mac"]="$fqdn"
         fi
     fi
+
 
     # ---- DHCPREQUEST ----
     if [[ "$line" == *"DHCP4_REQUEST"* ]]; then
@@ -43,6 +49,7 @@ while read -r line; do
             echo "$ts DHCPREQUEST for $ip from $mac ($host)"
         fi
     fi
+
 
     # ---- DHCPACK (LEASE_ALLOC) ----
     if [[ "$line" == *"DHCP4_LEASE_ALLOC"* ]]; then
