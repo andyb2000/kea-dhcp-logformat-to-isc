@@ -5,55 +5,67 @@
 ##########################################################################
 
 
-declare -A hostnames
-declare -A last_request_ip
+
+# Transaction tracking by identifier
+declare -A transaction_hostname
+declare -A transaction_fqdn
+declare -A transaction_mac
+declare -A transaction_ip
+declare -A transaction_tid
 
 # Accumulate multiline log entries and process them as a single logical line
 buffer=""
+
 process_log_entry() {
     local entry="$1"
-    # ---- Extract timestamp ----
+    # Extract the transaction identifier (e.g., kea-dhcp4.packets/1.129234940282560)
+    ident=$(echo "$entry" | grep -oP '\[([a-zA-Z0-9.-]+/[0-9.]+)\]' | head -1 | tr -d '[]')
     ts=$(echo "$entry" | awk '{print $1, $2}')
+    if [[ -z "$ident" ]]; then
+        return
+    fi
 
-    # ---- Capture hostname (option 12) ----
-    if [[ "$entry" == *"type=012"* ]]; then
+    # Capture client data from DHCP4_QUERY_DATA
+    if [[ "$entry" == *"DHCP4_QUERY_DATA"* ]]; then
+        # MAC
+        mac=$(echo "$entry" | grep -oP 'hwtype=1 \K([0-9a-f:]+)')
+        transaction_mac["$ident"]="$mac"
+        # Hostname (option 12)
         hostname=$(echo "$entry" | grep -oP 'type=012, len=[0-9]+: "\K[^"]+')
         if [[ -n "$hostname" ]]; then
-            mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
-            hostnames["$mac"]="$hostname"
+            transaction_hostname["$ident"]="$hostname"
         fi
-    fi
-
-    # ---- Capture FQDN (option 81) ----
-    if [[ "$entry" == *"type=081"* ]]; then
+        # FQDN (option 81)
         fqdn=$(echo "$entry" | grep -oP 'type=081, len=[0-9]+: "\K[^"]+')
         if [[ -n "$fqdn" ]]; then
-            mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
-            hostnames["$mac"]="$fqdn"
+            transaction_fqdn["$ident"]="$fqdn"
+        fi
+        # Transaction ID
+        tid=$(echo "$entry" | grep -oP 'trans_id=0x\K[0-9a-f]+')
+        if [[ -n "$tid" ]]; then
+            transaction_tid["$ident"]="$tid"
+        fi
+        # IP (remote_address)
+        ip=$(echo "$entry" | grep -oP 'remote_address=\K([0-9.]+)')
+        if [[ -n "$ip" ]]; then
+            transaction_ip["$ident"]="$ip"
         fi
     fi
 
-    # ---- DHCPREQUEST ----
-    if [[ "$entry" == *"DHCP4_REQUEST"* ]]; then
-        mac=$(echo "$entry" | grep -oP 'hwtype=1 \K([0-9a-f:]+)')
-        ip=$(echo "$entry" | grep -oP 'hint=\K([0-9.]+)')
-        host=${hostnames[$mac]:-"unknown"}
-        if [[ -n "$mac" && -n "$ip" ]]; then
-            last_request_ip["$mac"]="$ip"
-            echo "$ts DHCPREQUEST for $ip from $mac ($host)"
-        fi
-    fi
-
-    # ---- DHCPACK (LEASE_ALLOC) ----
-    if [[ "$entry" == *"DHCP4_LEASE_ALLOC"* ]]; then
-        mac=$(echo "$entry" | grep -oP 'hwtype=1 \K([0-9a-f:]+)')
-        ip=$(echo "$entry" | grep -oP 'lease \K([0-9.]+)')
-        lease=$(echo "$entry" | grep -oP 'for \K([0-9]+)')
-        host=${hostnames[$mac]:-"unknown"}
-        requested=${last_request_ip[$mac]:-"unknown"}
-        if [[ -n "$mac" && -n "$ip" ]]; then
-            echo "$ts DHCPACK on $ip to $mac ($host) requested $requested lease ${lease}s"
-        fi
+    # Output on DHCP4_RESPONSE_DATA (end of transaction)
+    if [[ "$entry" == *"DHCP4_RESPONSE_DATA"* ]]; then
+        mac=${transaction_mac[$ident]:-"unknown"}
+        hostname=${transaction_hostname[$ident]:-"unknown"}
+        fqdn=${transaction_fqdn[$ident]:-"unknown"}
+        ip=${transaction_ip[$ident]:-"unknown"}
+        tid=${transaction_tid[$ident]:-"unknown"}
+        echo "$ts DHCP transaction $ident: MAC=$mac IP=$ip Hostname=$hostname FQDN=$fqdn TID=$tid"
+        # Clean up
+        unset transaction_mac[$ident]
+        unset transaction_hostname[$ident]
+        unset transaction_fqdn[$ident]
+        unset transaction_ip[$ident]
+        unset transaction_tid[$ident]
     fi
 }
 
