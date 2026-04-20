@@ -8,8 +8,6 @@
 declare -A hostnames
 declare -A last_request_ip
 
-done
-
 # Accumulate multiline log entries and process them as a single logical line
 buffer=""
 process_log_entry() {
