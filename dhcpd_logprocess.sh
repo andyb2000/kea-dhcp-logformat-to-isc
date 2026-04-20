@@ -16,19 +16,19 @@ process_log_entry() {
     ts=$(echo "$entry" | awk '{print $1, $2}')
 
     # ---- Capture hostname (option 12) ----
-    if [[ "$entry" == *"option[12]"* ]]; then
-        mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
-        hostname=$(echo "$entry" | grep -oP 'option\[12\]=\K([^ ]+)')
-        if [[ -n "$mac" && -n "$hostname" ]]; then
+    if [[ "$entry" == *"type=012"* ]]; then
+        hostname=$(echo "$entry" | grep -oP 'type=012, len=[0-9]+: "\K[^"]+')
+        if [[ -n "$hostname" ]]; then
+            mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
             hostnames["$mac"]="$hostname"
         fi
     fi
 
     # ---- Capture FQDN (option 81) ----
-    if [[ "$entry" == *"option[81]"* ]]; then
-        mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
-        fqdn=$(echo "$entry" | grep -oP 'option\[81\]=\K([^ ]+)')
-        if [[ -n "$mac" && -n "$fqdn" ]]; then
+    if [[ "$entry" == *"type=081"* ]]; then
+        fqdn=$(echo "$entry" | grep -oP 'type=081, len=[0-9]+: "\K[^"]+')
+        if [[ -n "$fqdn" ]]; then
+            mac=$(echo "$entry" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
             hostnames["$mac"]="$fqdn"
         fi
     fi
